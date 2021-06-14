@@ -2,34 +2,125 @@
 # -*- coding: utf-8 -*-
 import time
 import numpy as np
-import from SpiderPi.Functions import kinematics  # The Kinematics library is encrypted and can only be called
+import threading
+import paho.mqtt.client as mqtt
+import json
+from SpiderPi.Functions import kinematics  # The Kinematics library is encrypted and can only be called
+'''
+class kinematics():
 
-ik = kinematics.IK()  # Instabtiate the inverse kinematics library
-ik.stand(ik.initial_pos, t=500)  # Attention, attitude is IK.INITIAL_POS, time 500ms
-print('姿态:\n', np.array(ik.initial_pos))  # Print and check Pose
-# The attitude data is a 3x6 array representing the x, y, and z coordinates of the ends of the six legs, in mm
-# The head forward direction is the X-axis, the head forward position is the negative direction, the right side is the Y-axis positive, and the vertical up is the Z-axis positive. A vertical line is drawn from the midpoint of the connection between the two middle legs to intersect the upper and lower plates, and the center of the connection is set as zero
-# The first leg is the upper left leg when the head is facing forward, and the counterclockwise leg is 1-6
-# [[-199.53, -177.73, -100.0],
-#  [0.0,     -211.27, -100.0],
-#  [199.53,  -177.73, -100.0],
-#  [199.53,  177.73,  -100.0],
-#  [0.0,     211.27,  -100.0],
-#  [-199.53, 177.73,  -100.0]]
+    class IK():
+        def stand(self, pos, dt):
+            pass
+'''
 
-# Parameter 1: Attitude; Parameter 2: mode, 2 is hexapod mode, 4 is quadruped mode, and when is four-legged mode, the corresponding posture shall be initial_pos_quadruped
-# Parameter 3: stride length, unit of mm (Angle, unit of degree when turning); Parameter 4: speed, unit mm/s; Parameter 5: Number of executions. When the unit is 0, it means infinite loop
 
-ik.go_forward(ik.initial_pos, 2, 50, 80, 1)  # Go straight ahead for 50mm
+class GamePad():
+    def __init__(self):
+        self._joyState = {}
+        # buttons
+        self._joyState["bA"] = False
+        self._joyState["bB"] =  False
+        self._joyState["bX"] =  False
+        self._joyState["bY"] =  False
+        
+        # shoulder triggers
+        self._joyState["bTL"] = False
+        self._joyState["bTR"] = False
 
-ik.back(ik.initial_pos, 2, 100, 80, 1)  # Go backward 100mm
+        # left stick
+        self._joyState["aXL"] = 0.
+        self._joyState["aYL"] = 0.
 
-ik.turn_left(ik.initial_pos, 2, 30, 100, 1)  # Turn left 30 degrees
+        # right stick
+        self._joyState["aXR"] = 0.
+        self._joyState["aYR"] = 0.
+    
+    def update(self, key, value):
+        self._joyState[key] = value
+    
+    def getValue(self, key):
+        return self._joyState[key]
 
-ik.turn_right(ik.initial_pos, 2, 30, 100, 1)  # Turn right 30 degrees
 
-ik.left_move(ik.initial_pos, 2, 100, 100, 1)  # left 100mm
+class HexapodRunner():
+    def __init__(self, gamepad):
+        self._gamepad = gamepad
+        self._ik = kinematics.IK()  # Instabtiate the inverse kinematics library
+        self._ik.stand(self._ik.initial_pos, t=500)  # Attention, attitude is IK.INITIAL_POS, time 500ms
+    
+    def loop(self):
+        # forward
+        if(self._gamepad.getValue("aXR") > 0):
+            self._ik.go_forward(self._ik.current_pos, 2, 50, 80, 1)  # Go straight ahead for 50mm
+        # backward
+        elif(self._gamepad.getValue("aXR") < 0):
+            self._ik.back(self._ik.current_pos, 2, 50, 80, 1)  # Go back ahead for 50mm
+        #right strafe
+        elif(self._gamepad.getValue("aYR") < 0):
+            self._ik.right_move(self._ik.current_pos, 2, 50, 80, 1)  # Right 50mm
+        #left strafe
+        elif(self._gamepad.getValue("aYR") > 0):
+            self._ik.left_move(self._ik.current_pos, 2, 50, 80, 1)  # Go left ahead for 50mm
+        #right turn
+        elif(self._gamepad.getValue("aYL") < 0):
+            self._ik.turn_right(self._ik.current_pos, 2, 30, 80, 1)  # Turn right 30 degrees
+        #left turn
+        elif(self._gamepad.getValue("aYL") > 0):
+            self._ik.turn_left(self._ik.current_pos, 2, 30, 80, 1)  # Turn left 30 degrees
 
-ik.right_move(ik.initial_pos, 2, 100, 100, 1)  # Right 100mm
 
-ik.stand(ik.initial_pos, t=500)
+
+class HotwordBeep(object):
+    def __init__(self, gamepad):
+        self._msgThread = threading.Thread(target = self._run)
+        
+        self._mqtt_client = mqtt.Client()
+        self._mqtt_client.on_connect = self._onConnect
+        self._mqtt_client.on_message = self._onMessage
+        self._gamepad = gamepad
+        
+    def _onConnect(self, client, userdata, flags, rc):
+        # subscribe to all messages
+        client.subscribe("remote")
+        pass
+    
+    def start(self):
+        self._mqtt_client.connect('rhasspy.local', 1883)
+        self._msgThread.start()
+        
+
+    def _run(self):
+        self._mqtt_client.loop_forever()
+        print("Ended Skill")
+    
+    def sendMessage(self, msg):
+        msg = json.dumps(msg)
+        #print(msg)
+        self._mqtt_client.publish("remote", msg)
+
+    def stop(self):
+        print("Skill should end")
+        self._mqtt_client.disconnect()
+        print("mqtt disconnected")
+        
+    def _onMessage(self, client, userdata, msg):
+        if msg.topic == "remote":
+            msgPayload = json.loads(msg.payload.decode("utf-8"))
+            for element in msgPayload:
+                gamepad.update(element, msgPayload[element])
+            
+
+gamepad = GamePad()
+skill = HotwordBeep(gamepad)
+runner = HexapodRunner(gamepad)
+skill.start()
+
+
+while(True):
+    try:
+        runner.loop()
+        #time.sleep(0.02)
+    except KeyboardInterrupt:
+        break
+skill.stop()
