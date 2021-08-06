@@ -19,22 +19,7 @@ class GamePad():
     def __init__(self):
         self._joyState = {}
         # buttons
-        self._joyState["bA"] = False
-        self._joyState["bB"] =  False
-        self._joyState["bX"] =  False
-        self._joyState["bY"] =  False
-        
-        # shoulder triggers
-        self._joyState["bTL"] = False
-        self._joyState["bTR"] = False
-
-        # left stick
-        self._joyState["aXL"] = 0.
-        self._joyState["aYL"] = 0.
-
-        # right stick
-        self._joyState["aXR"] = 0.
-        self._joyState["aYR"] = 0.
+        self._joyState["mode"] = "stop"
     
     def update(self, key, value):
         self._joyState[key] = value
@@ -51,22 +36,22 @@ class HexapodRunner():
     
     def loop(self):
         # forward
-        if(self._gamepad.getValue("aXR") > 0):
+        if(self._gamepad.getValue("mode") == "forward"):
             self._ik.go_forward(self._ik.current_pos, 2, 50, 80, 1)  # Go straight ahead for 50mm
         # backward
-        elif(self._gamepad.getValue("aXR") < 0):
+        elif(self._gamepad.getValue("mode") == "backward"):
             self._ik.back(self._ik.current_pos, 2, 50, 80, 1)  # Go back ahead for 50mm
         #right strafe
-        elif(self._gamepad.getValue("aYR") < 0):
+        elif(self._gamepad.getValue("mode") == "strafe_r"):
             self._ik.right_move(self._ik.current_pos, 2, 50, 80, 1)  # Right 50mm
         #left strafe
-        elif(self._gamepad.getValue("aYR") > 0):
+        elif(self._gamepad.getValue("mode") == "strafe_l"):
             self._ik.left_move(self._ik.current_pos, 2, 50, 80, 1)  # Go left ahead for 50mm
         #right turn
-        elif(self._gamepad.getValue("aYL") < 0):
+        elif(self._gamepad.getValue("mode") == "turn_r"):
             self._ik.turn_right(self._ik.current_pos, 2, 30, 80, 1)  # Turn right 30 degrees
         #left turn
-        elif(self._gamepad.getValue("aYL") > 0):
+        elif(self._gamepad.getValue("mode") == "turn_l"):
             self._ik.turn_left(self._ik.current_pos, 2, 30, 80, 1)  # Turn left 30 degrees
 
 
@@ -82,7 +67,7 @@ class HotwordBeep(object):
         
     def _onConnect(self, client, userdata, flags, rc):
         # subscribe to all messages
-        client.subscribe("remote")
+        client.subscribe("remote/spiderpi")
         pass
     
     def start(self):
@@ -105,7 +90,7 @@ class HotwordBeep(object):
         print("mqtt disconnected")
         
     def _onMessage(self, client, userdata, msg):
-        if msg.topic == "remote":
+        if msg.topic == "remote/spiderpi":
             msgPayload = json.loads(msg.payload.decode("utf-8"))
             for element in msgPayload:
                 gamepad.update(element, msgPayload[element])
